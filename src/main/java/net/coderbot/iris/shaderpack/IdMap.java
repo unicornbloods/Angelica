@@ -13,6 +13,7 @@ import net.coderbot.iris.shaderpack.materialmap.BlockRenderType;
 import net.coderbot.iris.shaderpack.materialmap.NamespacedId;
 import net.coderbot.iris.shaderpack.option.ShaderPackOptions;
 import net.coderbot.iris.shaderpack.preprocessor.PropertiesPreprocessor;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
 import net.minecraftforge.oredict.OreDictionary;
@@ -31,6 +32,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
+
+import static java.lang.System.in;
 
 /**
  * A utility class for parsing entries in item.properties, block.properties, and entities.properties files in shaderpacks
@@ -177,9 +180,72 @@ public class IdMap {
 	private static Int2ObjectMap<List<BlockEntry>> parseBlockMap(Properties properties, String keyPrefix, String fileName) {
 		Int2ObjectMap<List<BlockEntry>> entriesById = new Int2ObjectOpenHashMap<>();
 
+		// LGPL +SNEED License Copyright (c) 2024 UnicornBlood
+		
+		// TODO: make this actually populate on world load
+		// Get the leaves, so we can force shaders to support mods
+		StringBuilder stringBuilderOreDicitionary = new StringBuilder();
+		String stringLeaves;
+
+		ArrayList<ItemStack> leaves = OreDictionary.getOres("treeLeaves");
+		for (ItemStack leaf : leaves) {
+			if (leaf.getItem() instanceof ItemBlock) {
+				stringBuilderOreDicitionary.append(" ").append(Item.itemRegistry.getNameForObject(leaf.getItem()));
+			}
+		}
+
+		// Assign the ore dictionary leaves to stringLeaves or just assign vanilla leaves to prevent null errors
+		stringLeaves = stringBuilderOreDicitionary.toString().isEmpty() ? "minecraft:leaves minecraft:leaves2" : stringBuilderOreDicitionary.toString();
+		stringBuilderOreDicitionary = new StringBuilder();
+
+		// Get the slime blocks, so we can force shaders to support mods
+		String stringSlimeBlocks;
+
+		ArrayList<ItemStack> slimeBlocks = OreDictionary.getOres("blockSlime");
+		for (ItemStack block : slimeBlocks) {
+			if (block.getItem() instanceof ItemBlock) {
+				stringBuilderOreDicitionary.append(" ").append(Item.itemRegistry.getNameForObject(block.getItem()));
+			}
+		}
+
+		// Assign the ore dictionary leaves to stringLeaves or just assign vanilla leaves to prevent null errors
+		stringSlimeBlocks = stringBuilderOreDicitionary.toString().isEmpty() ? "etfuturum:slime morePlanet:cheese_slime_block ganyssurface:slimeBlock" : stringBuilderOreDicitionary.toString();
+		stringBuilderOreDicitionary = new StringBuilder();
+
+		// Get the slime blocks, so we can force shaders to support mods
+		String stringSaplings;
+
+		ArrayList<ItemStack> saplings = OreDictionary.getOres("treeSapling");
+		for (ItemStack block : saplings) {
+			if (block.getItem() instanceof ItemBlock) {
+				stringBuilderOreDicitionary.append(" ").append(Item.itemRegistry.getNameForObject(block.getItem()));
+			}
+		}
+
+		stringSaplings = stringBuilderOreDicitionary.toString().isEmpty() ? "minecraft:sapling" : stringBuilderOreDicitionary.toString();
+		stringBuilderOreDicitionary = new StringBuilder();
+
+		// Map containing post and pre flattening mappings
+		Map<String, String> mappings = new HashMap<>();
+		mappings.put("minecraft:grass_block", "minecraft:grass");
+		mappings.put("minecraft:oak_leaves", "minecraft:leaves");
+		mappings.put("minecraft:leaves", stringLeaves);
+		mappings.put("minecraft:white_stained_glass", "minecraft:stained_glass"); // TODO: make this ore dict
+		mappings.put("minecraft:white_stained_glass_pane", "minecraft:stained_glass_pane"); // TODO: make this ore dict
+		mappings.put("minecraft:slime_block", "minecraft:slime"); // Yes this will be overwritten on the next line. I want that
+		mappings.put("minecraft:slime", stringSlimeBlocks);
+		mappings.put("minecraft:nether_portal", "minecraft:portal");
+		mappings.put("minecraft:dead_bush", "minecraft:deadbush");
+		mappings.put("minecraft:oak_sapling", "minecraft:sapling");
+		mappings.put("minecraft:sapling", stringSaplings);
+		mappings.put("minecraft:poppy", "minecraft:red_flower");
+		mappings.put("minecraft:red_flower", "minecraft:sapling"); // TODO: make this ore dict
+
+		// End licensed changed by UnicornBlood
+
 		properties.forEach((keyObject, valueObject) -> {
 			final String key = (String) keyObject;
-			StringBuilder value = new StringBuilder((String) valueObject);
+			final String value = (String) valueObject;
 
 			if (!key.startsWith(keyPrefix)) {
 				// Not a valid line, ignore it
@@ -198,18 +264,24 @@ public class IdMap {
 
 			final List<BlockEntry> entries = new ArrayList<>();
 
-			if (value.toString().contains("minecraft:leaves")) {
-				ArrayList<ItemStack> leaves = OreDictionary.getOres("treeLeaves");
-				for (ItemStack leaf : leaves) {
-					if (leaf.getItem() instanceof ItemBlock) {
-						Iris.logger.warn("Found leaf " + leaf.getItem().itemRegistry.getNameForObject(leaf.getItem()));
-						value.append(" ").append(leaf.getItem().itemRegistry.getNameForObject(leaf.getItem()));
-					}
-				}
+			StringBuilder stringBuilderValue = new StringBuilder(value);
+
+			// Fix 1.13+ grass name to be tall grass if it is in with flowers. Otherwise, it would make pre 1.13 definitions cause waving grass blocks.
+			// This will break for some reason if "minecraft:grass" and "minecraft:grass_block" are in the save line
+			final String grass = "minecraft:grass";
+			if (value.contains("minecraft:wither_rose") && value.contains(grass)) {
+				stringBuilderValue.replace(stringBuilderValue.indexOf(grass), stringBuilderValue.indexOf(grass) + grass.length(), "minecraft:tallgrass");
 			}
 
+			// Remap most values remaining
+			mappings.forEach((mappingsKeyObject, mappingsValueObject) -> {
+				if (stringBuilderValue.toString().contains(mappingsKeyObject)) {
+					stringBuilderValue.replace(stringBuilderValue.indexOf(mappingsKeyObject), stringBuilderValue.indexOf(mappingsKeyObject) + mappingsKeyObject.length(), mappingsValueObject);
+				}
+			});
+
 			// Split on whitespace groups, not just single spaces
-			for (String part : value.toString().split("\\s+")) {
+			for (String part : stringBuilderValue.toString().split("\\s+")) {
 				if (part.isEmpty()) {
 					continue;
 				}
